@@ -1,0 +1,16 @@
+venv/
+config.json
+
+*.pyc
+__pycache__/
+
+.pytest_cache/
+.coverage
+
+dist/
+build/
+*.egg-info/
+.idea
+
+.direnv
+.envrc

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="./bootstrap.min.css" rel="stylesheet">
+
+    <title>Title</title>
+</head>
+<body>
+
+<div class="container-fluid text-center">
+    <div class="row justify-content-md-center">
+        <div class="vstack gap-3">
+            <h1 id="titleLabel">Intercom</h1>
+            <h2 id="macLabel">MAC: [unknown]</h2>
+
+            <div id="networkList" class="container text-center">
+                <p>Network List</p>
+            </div>
+
+            <div id="passwordForm" class="d-grid gap-2 col-xl-6 mx-auto invisible">
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="inputPassword" placeholder="Password">
+                    <label for="inputPassword">Password</label>
+                </div>
+
+                <button class="btn btn-primary" type="button" onclick="doConnect()">Connect</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="./bootstrap.bundle.min.js"></script>
+
+<script>
+    async function postData(method, payload = {}) {
+        let host = window.location.host;
+        let fullPath = `http://${host}/${method}`;
+        console.log(`Fetching ${fullPath}`);
+
+        const response = await fetch(fullPath, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+
+        if (response.ok) {
+            return response.json();
+        } else {
+            return null;
+        }
+    }
+
+    let activeNetworkName = null;
+    let currentNetworkList = null;
+
+    function setActiveNetwork(network) {
+        activeNetworkName = network;
+        updateNetworkList();
+    }
+
+    function updatePasswordVisibility(isVisible) {
+        if (isVisible) {
+            document.getElementById("passwordForm").classList.remove("invisible");
+        } else {
+            document.getElementById("passwordForm").classList.add("invisible");
+        }
+    }
+
+    function updateNetworkList() {
+        let activeFound = false;
+        let tableContents = '<div class="list-group">';
+        for (let networkEntry of currentNetworkList) {
+            let networkName = networkEntry[0];
+            let rssi = `${networkEntry[1]} dB`;
+
+            let activeSuffix = "";
+            let activeTag = "";
+            if (networkName === activeNetworkName) {
+                activeSuffix = " active";
+                activeTag = ' aria-current="true"';
+                activeFound = true;
+            }
+
+            tableContents +=
+                `<a href="#" class="list-group-item list-group-item-action${activeSuffix}"${activeTag} onclick="setActiveNetwork('${networkName}')">
+     <div class="d-flex w-100 justify-content-between">
+       <h5 class="mb-1">${networkName}</h5>
+       <small>${rssi}</small>
+     </div>
+</a>`
+        }
+        tableContents += '</div>';
+
+        if (!activeFound) {
+            activeNetworkName = null;
+            updatePasswordVisibility(false);
+        } else {
+            updatePasswordVisibility(true);
+        }
+
+        document.getElementById("networkList").innerHTML = tableContents;
+    }
+
+    function doPeriodicScan() {
+        console.log("Fetching AP data");
+
+        getMacAddress();
+
+        postData("scan").then((data) => {
+            if (data === null) {
+                return;
+            }
+
+            currentNetworkList = data;
+            console.log(currentNetworkList);
+
+            updateNetworkList();
+        });
+    }
+
+    let periodicScanId = setInterval(doPeriodicScan, 15000);
+
+    function stopPeriodicScan() {
+        clearInterval(periodicScanId);
+    }
+
+    function updateMacAddress(mac) {
+        if (mac === null) {
+            mac = "[unknown]";
+        }
+
+        document.getElementById("macLabel").innerHTML = `MAC: ${mac}`;
+    }
+
+    function getMacAddress() {
+        postData("mac").then((data) => {
+            if (data === null) {
+                return;
+            }
+            updateMacAddress(data);
+        });
+    }
+
+    function doConnect() {
+        stopPeriodicScan();
+
+        let password = document.getElementById("inputPassword").value;
+        console.log(`Connecting to "${activeNetworkName}" with "${password}"`);
+
+        let config = {
+            "name": activeNetworkName,
+            "password": password,
+        };
+
+        postData("config", config).then((data) => {
+            if (data === null) {
+                return;
+            }
+
+            document.getElementById("passwordForm").classList.add("invisible");
+            document.getElementById("networkList").classList.add("invisible");
+            document.getElementById("macLabel").innerHTML = `Please navigate to the new IP address`;
+        });
+    }
+
+    // Always get the MAC address and the network list upon boot
+    doPeriodicScan();
+</script>
+
+</body>
+</html>
