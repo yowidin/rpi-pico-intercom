@@ -83,7 +83,7 @@ class PicoServo:
 class Servo:
     PIN_NAME = "GPIO0"
     ON_ANGLE = 180.0
-    OFF_ANGLE = 0.0
+    OFF_ANGLE = 10.0
 
     def __init__(self):
         if USE_MOCK_SERVO:
