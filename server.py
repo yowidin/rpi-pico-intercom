@@ -129,6 +129,24 @@ class Server:
         ip_address_list = [x[-1] for x in socket.getaddrinfo('0.0.0.0', 80)]
         return ip_address_list[0]
 
+    def _shutdown_current_client(self):
+        try:
+            if self.client is not None:
+                if USE_MOCK_WIFI:
+                    self.client.shutdown(socket.SHUT_RDWR)
+                self.client.close()
+        except Exception as e:
+            print(f'Shutdown error: {e}')
+
+        self.client = None
+
+    def _try_sending_an_error(self):
+        try:
+            if self.client is not None:
+                self.respond_with_error(500)
+        except Exception as e:
+            print(f'Error sending an error message: {e}')
+
     def _listen(self):
         self.listen_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listen_socket.bind(self.address)
@@ -137,17 +155,13 @@ class Server:
         while True:
             try:
                 self.client, _ = self.listen_socket.accept()
+                self.client.settimeout(30)
                 self._handle_one()
             except Exception as e:
                 print(f'Error: {e}')
-                if self.client is not None:
-                    self.respond_with_error(500)
+                self._try_sending_an_error()
             finally:
-                if self.client is not None:
-                    if USE_MOCK_WIFI:
-                        self.client.shutdown(socket.SHUT_RDWR)
-                    self.client.close()
-                    self.client = None
+                self._shutdown_current_client()
 
     def _handle_one(self):
         request = Request(self.client)
