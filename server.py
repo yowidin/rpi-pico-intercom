@@ -1,8 +1,95 @@
 import socket
 import json
+from typing import List, Dict, Optional
+
+import os
 
 from wifi import WiFi, USE_MOCK_WIFI
 from servo import Servo
+
+LINE_SEPARATOR = b'\r\n'
+
+
+def get_file_size(path: str) -> int:
+    return os.stat(path)[6]
+
+
+class Stream:
+    BUF_SIZE = 128
+
+    def __init__(self, sock: socket.socket):
+        self.socket = sock
+        self.contents = bytearray()
+        self.read_buf = bytearray(b'\x00' * Stream.BUF_SIZE)
+
+    def read_some(self):
+        num_bytes = self.socket.recv_into(self.read_buf)
+        self.contents += self.read_buf[0:num_bytes]
+
+    def read_until(self, token: bytes) -> bytearray:
+        while True:
+            idx = self.contents.find(token)
+            if idx == -1:
+                self.read_some()
+            else:
+                break
+
+        result = self.contents[0:idx]
+        self.contents = self.contents[idx + len(token):]
+        return result
+
+    def read_line(self) -> bytearray:
+        return self.read_until(LINE_SEPARATOR)
+
+    def read_exact(self, num_bytes: int) -> bytearray:
+        while len(self.contents) < num_bytes:
+            self.read_some()
+
+        result = self.contents[0:num_bytes]
+        self.contents = self.contents[num_bytes:]
+        return result
+
+
+class Request:
+    def __init__(self, sock: socket.socket):
+        self.stream = Stream(sock)
+
+        request_line = self.stream.read_line()
+        self.method, self.uri, self.protocol = request_line.decode('utf-8').split()
+        self.headers = self._parse_headers()
+        self.data = self._parse_body()
+
+    def _parse_headers(self) -> Dict[str, str]:
+        result = {}
+        while True:
+            header_line = self.stream.read_line()
+            if len(header_line) == 0:
+                # An empty line denotes BODY start
+                break
+
+            name, value = header_line.decode('utf-8').split(': ', 1)
+            result[name.lower()] = value
+        return result
+
+    def _parse_body(self) -> Optional[dict]:
+        if 'content-length' not in self.headers:
+            return None
+
+        content_length = int(self.headers['content-length'])
+
+        if 'content-type' not in self.headers:
+            return None
+
+        content_type = self.headers['content-type']
+
+        if content_type != 'application/json':
+            return None
+
+        body_bytes = self.stream.read_exact(content_length)
+        return json.loads(body_bytes.decode('utf-8'))
+
+    def __str__(self):
+        return f'{self.method} {self.uri}'
 
 
 class Server:
@@ -53,7 +140,8 @@ class Server:
             try:
                 self.client, _ = self.listen_socket.accept()
                 self._handle_one()
-            except:
+            except Exception as e:
+                print(f'Error: {e}')
                 if self.client is not None:
                     self.respond_with_error(500)
             finally:
@@ -62,47 +150,26 @@ class Server:
                     self.client = None
 
     def _handle_one(self):
-        request = self.client.recv(1024)
+        request = Request(self.client)
+        self.request_handler(self, request)
 
-        if len(request) == 0:
-            return
+    def _send_all(self, data: bytes):
+        while len(data) != 0:
+            bytes_sent = self.client.send(data)
+            data = data[bytes_sent:]
 
-        request = request.decode('utf-8')
-        lines = request.split('\r\n')
-
-        method, path, version = lines[0].split(' ')
-
-        delimiter = None
-        for i, line in enumerate(lines):
-            if len(line) == 0:
-                delimiter = i
-                break
-
-        payload = None
-        if delimiter is not None:
-            payload = lines[delimiter + 1]
-            if len(payload) == 0:
-                payload = None
-            else:
-                payload = json.loads(payload)
-
-        self.request_handler(self, method, path, payload)
-
-    def send(self, text):
-        if USE_MOCK_WIFI:
-            self.client.sendall(text.encode('utf-8'))
-        else:
-            self.client.sendall(text)
+    def write(self, data: bytes):
+        self._send_all(data)
 
     def write_return_code(self, code: int):
         reason = self.RESPONSE_CODES.get(code, 'Unknown reason')
-        return self.send(f"HTTP/1.1 {code} {reason}\r\n")
+        return self.write(f"HTTP/1.1 {code} {reason}\r\n".encode())
 
     def write_content_type(self, content_type: str):
-        return self.send(f"Content-type: {content_type}\r\n")
+        return self.write(f"Content-type: {content_type}\r\n".encode())
 
     def write_delimiter(self):
-        self.send('\r\n')
+        self.write(b'\r\n')
 
     def respond_with_error(self, code: int):
         self.write_return_code(code)
@@ -110,7 +177,8 @@ class Server:
         self.write_delimiter()
 
         reason = self.RESPONSE_CODES.get(code, 'Unknown reason')
-        self.send(self.ERROR_CODE_TEMPLATE % {'code': code, 'reason': reason})
+        message = self.ERROR_CODE_TEMPLATE % {'code': code, 'reason': reason}
+        self.write(message.encode())
 
 
 def handle_one_file(server: Server, path: str):
@@ -123,19 +191,21 @@ def handle_one_file(server: Server, path: str):
     else:
         content_type = 'text/plain'
 
+    file_size = get_file_size(path)
     with open(path, 'r') as f:
         server.write_return_code(200)
         server.write_content_type(content_type)
+        server.write(f'Content-Length: {file_size}\r\n'.encode())
         server.write_delimiter()
 
         buf_size = 100
         buf = f.read(buf_size)
         while len(buf) != 0:
-            server.send(buf)
+            server.write(buf.encode())
             buf = f.read(buf_size)
 
 
-def handle_scan(server: Server, _: dict):
+def handle_scan(server: Server, _: Request):
     scan_results = server.wifi.scan()
 
     result = []
@@ -145,13 +215,13 @@ def handle_scan(server: Server, _: dict):
     return result
 
 
-def handle_update_config(server: Server, payload: dict):
-    server.wifi.update_config(payload['name'], payload['password'])
+def handle_update_config(server: Server, payload: Request):
+    server.wifi.update_config(payload.data['name'], payload.data['password'])
     return {}
 
 
-def handle_set_state(server: Server, payload: dict):
-    if payload['is_on']:
+def handle_set_state(server: Server, payload: Request):
+    if payload.data['is_on']:
         server.servo.turn_on()
     else:
         server.servo.turn_off()
@@ -169,7 +239,7 @@ def handle_get_mac(server: Server, _: dict):
     return [raw_mac.hex(':')]
 
 
-def handle_post(server: Server, path: str, payload: dict):
+def handle_post(server: Server, request: Request):
     methods = {
         'scan': handle_scan,
         'config': handle_update_config,
@@ -178,42 +248,45 @@ def handle_post(server: Server, path: str, payload: dict):
         'mac': handle_get_mac,
     }
 
-    path = path[1:]
+    path = request.uri[1:]
 
     if path not in methods:
         server.write_return_code(404)
         server.write_content_type('application/json')
         server.write_delimiter()
-        server.send('{}')
+        server.write(b'{}')
     else:
         server.write_return_code(200)
         server.write_content_type('application/json')
         server.write_delimiter()
 
-        response = methods[path](server, payload)
+        response = methods[path](server, request)
         response_json = json.dumps(response)
-        server.send(response_json)
+        server.write(response_json.encode())
 
 
-def basic_handler(server: Server, method: str, path: str, payload: dict):
-    print(f'Request: {method} {path}')
+def basic_handler(server: Server, request: Request):
+    print(f'Request: {request}')
 
-    if method == 'POST':
-        handle_post(server, path, payload)
+    if request.method == 'POST':
+        handle_post(server, request)
         return
 
-    if method != 'GET':
+    if request.method != 'GET':
         server.respond_with_error(400)
         return
 
     content_root = 'www/'
 
     is_connected = server.wifi.is_connected()
-    if path == '/':
+    if request.uri == '/':
         if is_connected:
             path = 'client.html'
         else:
             path = 'server.html'
+    else:
+        server.respond_with_error(404)
+        return
 
     full_path = content_root + path
     try:
