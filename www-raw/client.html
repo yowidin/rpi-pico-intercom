@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        .center {
+            position: absolute;
+            margin: 0 -50% 0 0;
+            left: 50%;
+            transform: translate(-50%, 0%)
+        }
+    </style>
+
+    <title>Intercom</title>
+</head>
+<body>
+
+<div class="center">
+    <h1>Intercom</h1>
+
+    <div>
+        <div>
+            <label>MAC</label>
+            <label id="macLabel">[unknown]</label>
+        </div>
+
+        <div>
+            <label>State</label>
+            <label id="stateLabel">[unknown]</label>
+        </div>
+    </div>
+
+    <div>
+        <button onclick="setState(true)">Turn On</button>
+        <button onclick="setState(false)">Turn Off</button>
+    </div>
+</div>
+
+<script>
+    const periodicGetInterval = 15000;
+
+    async function postData(method, payload = {}) {
+        let host = window.location.host;
+        let fullPath = `http://${host}/${method}`;
+        console.log(`Fetching ${fullPath}`);
+
+        const response = await fetch(fullPath, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+
+        if (response.ok) {
+            return response.json();
+        } else {
+            return null;
+        }
+    }
+
+    function updateCurrentState(isOn, isOff) {
+        let status = "[unknown]";
+        if (isOn) {
+            status = "On";
+        }
+        if (isOff) {
+            status = "Off";
+        }
+
+        document.getElementById("stateLabel").innerHTML = status;
+    }
+
+    function getCurrentState() {
+        postData("get").then((data) => {
+            if (data === null) {
+                return;
+            }
+
+            let isOn = data["is_on"];
+            let isOff = data["is_off"];
+            updateCurrentState(isOn, isOff);
+        });
+    }
+
+    function updateMacAddress(mac) {
+        if (mac === null) {
+            mac = "[unknown]";
+        }
+
+        document.getElementById("macLabel").innerHTML = `${mac}`;
+    }
+
+    function getMacAddress() {
+        postData("mac").then((data) => {
+            if (data === null) {
+                return;
+            }
+            updateMacAddress(data);
+        });
+    }
+
+    function setState(isOn) {
+        let payload = {"is_on": isOn};
+        stopPeriodicGet();
+        postData("set", payload).then((data) => {
+            if (data === null) {
+                return;
+            }
+
+            periodicGetId = setInterval(getCurrentState, periodicGetInterval);
+            getCurrentState();
+        });
+    }
+
+    getMacAddress();
+    getCurrentState();
+
+    let periodicGetId = setInterval(getCurrentState, periodicGetInterval);
+
+    function stopPeriodicGet() {
+        clearInterval(periodicGetId);
+    }
+</script>
+</body>
+</html>
