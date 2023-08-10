@@ -1,6 +1,5 @@
 import socket
 import json
-from typing import List, Dict, Optional
 
 import os
 
@@ -20,11 +19,10 @@ class Stream:
     def __init__(self, sock: socket.socket):
         self.socket = sock
         self.contents = bytearray()
-        self.read_buf = bytearray(b'\x00' * Stream.BUF_SIZE)
 
     def read_some(self):
-        num_bytes = self.socket.recv_into(self.read_buf)
-        self.contents += self.read_buf[0:num_bytes]
+        read_buf = self.socket.recv(Stream.BUF_SIZE)
+        self.contents += read_buf
 
     def read_until(self, token: bytes) -> bytearray:
         while True:
@@ -59,7 +57,7 @@ class Request:
         self.headers = self._parse_headers()
         self.data = self._parse_body()
 
-    def _parse_headers(self) -> Dict[str, str]:
+    def _parse_headers(self):
         result = {}
         while True:
             header_line = self.stream.read_line()
@@ -71,7 +69,7 @@ class Request:
             result[name.lower()] = value
         return result
 
-    def _parse_body(self) -> Optional[dict]:
+    def _parse_body(self):
         if 'content-length' not in self.headers:
             return None
 
@@ -146,6 +144,8 @@ class Server:
                     self.respond_with_error(500)
             finally:
                 if self.client is not None:
+                    if USE_MOCK_WIFI:
+                        self.client.shutdown(socket.SHUT_RDWR)
                     self.client.close()
                     self.client = None
 
@@ -285,8 +285,7 @@ def basic_handler(server: Server, request: Request):
         else:
             path = 'server.html'
     else:
-        server.respond_with_error(404)
-        return
+        path = request.uri[1:]
 
     full_path = content_root + path
     try:
