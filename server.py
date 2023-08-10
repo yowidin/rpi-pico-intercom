@@ -1,9 +1,7 @@
 import socket
 import json
 
-from io import IOBase
-
-from wifi import WiFi
+from wifi import WiFi, USE_MOCK_WIFI
 from servo import Servo
 
 
@@ -55,9 +53,9 @@ class Server:
             try:
                 self.client, _ = self.listen_socket.accept()
                 self._handle_one()
-            except OSError as e:
-                print(f'Error: {e}')
-                pass
+            except:
+                if self.client is not None:
+                    self.respond_with_error(500)
             finally:
                 if self.client is not None:
                     self.client.close()
@@ -91,13 +89,10 @@ class Server:
         self.request_handler(self, method, path, payload)
 
     def send(self, text):
-        if isinstance(text, bytearray):
-            self.client.send(text)
+        if USE_MOCK_WIFI:
+            self.client.sendall(text.encode('utf-8'))
         else:
-            self.client.send(text.encode('utf-8'))
-
-    def flush(self):
-        self.client.flush()
+            self.client.sendall(text)
 
     def write_return_code(self, code: int):
         reason = self.RESPONSE_CODES.get(code, 'Unknown reason')
@@ -194,13 +189,10 @@ def handle_post(server: Server, path: str, payload: dict):
         server.write_return_code(200)
         server.write_content_type('application/json')
         server.write_delimiter()
+
         response = methods[path](server, payload)
-
-        class SocketWriter(IOBase):
-            def write(self, data):
-                server.send(data)
-
-        json.dump(response, SocketWriter())
+        response_json = json.dumps(response)
+        server.send(response_json)
 
 
 def basic_handler(server: Server, method: str, path: str, payload: dict):

@@ -13,7 +13,7 @@ class MockWifi:
         pass
 
     def is_connected(self):
-        return True
+        return False
 
     def scan(self):
         return [(b'First', b'ABCDEF', 11, -44, 5, 3), (b'Second', b'FEDCBA', 11, -42, 5, 2),
