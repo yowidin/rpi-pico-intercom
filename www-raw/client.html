@@ -68,6 +68,8 @@
         }
 
         document.getElementById("stateLabel").innerHTML = status;
+
+        getMacAddress();
     }
 
     function getCurrentState() {
@@ -112,7 +114,6 @@
         });
     }
 
-    getMacAddress();
     getCurrentState();
 
     let periodicGetId = setInterval(getCurrentState, periodicGetInterval);

@@ -6,7 +6,7 @@
 
     <link href="./bootstrap.min.css" rel="stylesheet">
 
-    <title>Title</title>
+    <title>Intercom</title>
 </head>
 <body>
 
@@ -102,12 +102,12 @@
         }
 
         document.getElementById("networkList").innerHTML = tableContents;
+
+        getMacAddress();
     }
 
     function doPeriodicScan() {
         console.log("Fetching AP data");
-
-        getMacAddress();
 
         postData("scan").then((data) => {
             if (data === null) {
@@ -166,7 +166,6 @@
         });
     }
 
-    // Always get the MAC address and the network list upon boot
     doPeriodicScan();
 </script>
 
