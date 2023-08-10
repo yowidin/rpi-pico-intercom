@@ -23,7 +23,7 @@ class MockWifi:
         return b'12345'
 
     def update_config(self, ssid: str, password: str):
-        # Nothing to do here
+        print(f'Updating config to "{ssid}" / "{password}"')
         return
 
 
@@ -64,14 +64,23 @@ class PicoWiFi:
             reset()
 
     def _connect(self):
-        print(f'Connecting to {self.ssid} / {self.password}')
+        success = False
+        for i in range(PicoWiFi.CONNECTION_RETRIES):
+            print(f'Connecting to {self.ssid} / {self.password} #{i}')
 
-        self.wlan = network.WLAN(network.STA_IF)
-        self.wlan.active(True)
-        self.wlan.connect(self.ssid, self.password)
+            self.wlan = network.WLAN(network.STA_IF)
+            self.wlan.active(True)
+            self.wlan.connect(self.ssid, self.password)
 
-        print('Waiting for connection...')
-        if not self._wait_for_connection():
+            print('Waiting for connection...')
+            if not self._wait_for_connection():
+                self.wlan.disconnect()
+                self.wlan.active(False)
+            else:
+                success = True
+                break
+
+        if not success:
             self.wlan.disconnect()
 
             # Reset to the default SSID and password
