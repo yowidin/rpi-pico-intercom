@@ -6,7 +6,7 @@
 
     <link href="./bootstrap.min.css" rel="stylesheet">
 
-    <title>Title</title>
+    <title>Intercom</title>
 </head>
 <body>
 
@@ -115,12 +115,12 @@
         });
     }
 
-    getCurrentState();
-
     let periodicGetId = setInterval(getCurrentState, periodicGetInterval);
     function stopPeriodicGet() {
         clearInterval(periodicGetId);
     }
+
+    getCurrentState();
 </script>
 </body>
 </html>

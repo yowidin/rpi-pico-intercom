@@ -114,13 +114,12 @@
         });
     }
 
-    getCurrentState();
-
     let periodicGetId = setInterval(getCurrentState, periodicGetInterval);
-
     function stopPeriodicGet() {
         clearInterval(periodicGetId);
     }
+
+    getCurrentState();
 </script>
 </body>
 </html>
